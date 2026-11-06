@@ -156,18 +156,17 @@ impl Process {
         }
     }
 
-    /// Returns a human readable, escaped string of the environment variables.
-    /// Used for logging.
+    /// Returns a human readable list of the environment variable names.
+    /// Used for logging. The values are deliberately left out: the environment
+    /// handed to a session process is usually the user's whole login
+    /// environment, which routinely carries API keys and tokens that must not
+    /// end up in the journal.
     pub(crate) fn env_text(&self) -> Cow<'static, str> {
         if self.env.is_empty() {
             Cow::Borrowed("")
         } else {
-            Cow::Owned(self.env.iter().fold(String::new(), |acc, (k, v)| {
-                if v.contains(' ') {
-                    format!("{} {}=\"{}\"", acc, k, v)
-                } else {
-                    format!("{} {}={}", acc, k, v)
-                }
+            Cow::Owned(self.env.iter().fold(String::new(), |acc, (k, _)| {
+                format!("{} {}=<hidden>", acc, k)
             }))
         }
     }
@@ -186,5 +185,30 @@ impl Process {
                 }
             }))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Process;
+
+    #[test]
+    fn env_text_names_variables_without_their_values() {
+        let process = Process::new().with_env([
+            ("MY_SERVICE_API_KEY", "sk-live-0123456789"),
+            ("HOME", "/home/someone"),
+        ]);
+
+        let text = process.env_text();
+
+        assert!(text.contains("MY_SERVICE_API_KEY"), "{text}");
+        assert!(text.contains("HOME"), "{text}");
+        assert!(!text.contains("sk-live-0123456789"), "{text}");
+        assert!(!text.contains("/home/someone"), "{text}");
+    }
+
+    #[test]
+    fn env_text_is_empty_without_environment() {
+        assert_eq!(Process::new().env_text(), "");
     }
 }
